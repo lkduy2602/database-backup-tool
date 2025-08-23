@@ -82,19 +82,29 @@ AUTOMATED_BACKUP=true docker-compose up -d --build
 
 ### Rclone Configuration Methods
 
-#### Method 1: File Mount (Recommended)
+**Priority Order: Existing Config > File Mount > Base64 Encoded**
+
+The tool now intelligently handles rclone configuration to preserve refreshed tokens:
+
+1. **Existing Config (Highest Priority)**: If a valid rclone config exists in the container, it will be used instead of recreating from environment variables
+2. **File Mount**: Mount external rclone.conf file
+3. **Base64 Encoded**: Use base64 encoded config from environment variable
+
+#### Method 1: File Mount (Recommended for Initial Setup)
 
 ```bash
 # 1. Copy rclone.conf to project directory
 cp ~/.config/rclone/rclone.conf ./rclone.conf
 
-# 2. Add volume mount in docker-compose.yml
+# 2. Uncomment and add volume mount in docker-compose.yml
 volumes:
   - ./rclone.conf:/etc/rclone.conf:ro
 
 # 3. Set in .env
 RCLONE_CONFIG_FILE=/etc/rclone.conf
 ```
+
+**Note**: After initial setup, you can comment out this volume mount to preserve the config inside the container.
 
 #### Method 2: Base64 Encoded (Good for Secrets)
 
@@ -104,6 +114,20 @@ cat rclone.conf | base64 -w 0
 
 # 2. Copy output to .env
 RCLONE_CONFIG_BASE64=W2dkcml2ZV0K...
+```
+
+#### Method 3: Persistent Config (Best for Production)
+
+```bash
+# Create a named volume for rclone config
+docker volume create rclone-config
+
+# Mount in docker-compose.yml
+volumes:
+  - rclone-config:/root/.config/rclone
+
+# This way config persists between container restarts
+# and tokens are preserved
 ```
 
 ### Backup Naming
@@ -390,6 +414,15 @@ AUTOMATED_BACKUP=true
 CRON_SCHEDULE=0 2 * * *
 BACKUP_RETENTION_DAYS=90
 TZ=UTC
+
+# docker-compose.yml volumes (choose one):
+# Option A: Initial setup with file mount
+volumes:
+  - ./rclone.conf:/etc/rclone.conf:ro
+
+# Option B: Persistent config (recommended for production)
+volumes:
+  - rclone-config:/root/.config/rclone
 ```
 
 ### Example 2: Development MySQL

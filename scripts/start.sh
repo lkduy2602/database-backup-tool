@@ -8,9 +8,25 @@ log() {
 }
 
 # Setup rclone config once with multiple methods
+# Priority: Existing config > File mount > Base64 env var
 setup_rclone_once() {
     log "Setting up rclone configuration..."
     mkdir -p /root/.config/rclone
+    
+    # Check if rclone config already exists and is valid
+    if [ -f "/root/.config/rclone/rclone.conf" ] && [ -s "/root/.config/rclone/rclone.conf" ]; then
+        log "Found existing rclone config, testing connection..."
+        if rclone lsd "$RCLONE_REMOTE_PATH" > /dev/null 2>&1; then
+            log "✅ Using existing rclone config - connection successful"
+            touch /tmp/rclone_ready
+            log "Rclone setup completed using existing config"
+            return 0
+        else
+            log "⚠️  Existing config found but connection failed, will recreate..."
+        fi
+    fi
+    
+    # No valid existing config, create new one
     if [ -n "$RCLONE_CONFIG_FILE" ] && [ -f "$RCLONE_CONFIG_FILE" ]; then
         log "Using rclone config file: $RCLONE_CONFIG_FILE"
         cp "$RCLONE_CONFIG_FILE" /root/.config/rclone/rclone.conf
@@ -22,11 +38,13 @@ setup_rclone_once() {
         log "Please set one of: RCLONE_CONFIG_FILE or RCLONE_CONFIG_BASE64"
         exit 1
     fi
+    
     log "Testing rclone connection..."
     if ! rclone lsd "$RCLONE_REMOTE_PATH" > /dev/null 2>&1; then
         log "ERROR: Failed to connect to remote storage: $RCLONE_REMOTE_PATH"
         exit 1
     fi
+    
     log "✅ Rclone connection successful"
     touch /tmp/rclone_ready
     log "Rclone setup completed and ready for use"
