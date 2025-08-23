@@ -1,0 +1,100 @@
+#!/bin/bash
+
+set -e
+
+# Log function
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
+
+# Setup rclone config once with multiple methods
+setup_rclone_once() {
+    log "Setting up rclone configuration..."
+    mkdir -p /root/.config/rclone
+    if [ -n "$RCLONE_CONFIG_FILE" ] && [ -f "$RCLONE_CONFIG_FILE" ]; then
+        log "Using rclone config file: $RCLONE_CONFIG_FILE"
+        cp "$RCLONE_CONFIG_FILE" /root/.config/rclone/rclone.conf
+    elif [ -n "$RCLONE_CONFIG_BASE64" ]; then
+        log "Using rclone config from base64 encoded environment variable"
+        echo "$RCLONE_CONFIG_BASE64" | base64 -d > /root/.config/rclone/rclone.conf
+    else
+        log "ERROR: No rclone configuration provided"
+        log "Please set one of: RCLONE_CONFIG_FILE or RCLONE_CONFIG_BASE64"
+        exit 1
+    fi
+    log "Testing rclone connection..."
+    if ! rclone lsd "$RCLONE_REMOTE_PATH" > /dev/null 2>&1; then
+        log "ERROR: Failed to connect to remote storage: $RCLONE_REMOTE_PATH"
+        exit 1
+    fi
+    log "✅ Rclone connection successful"
+    touch /tmp/rclone_ready
+    log "Rclone setup completed and ready for use"
+}
+
+# Setup cron job for automated mode
+setup_cron() {
+    log "Setting up automated backup with cron..."
+    
+    # Default schedule: 2:00 AM daily
+    local cron_schedule="${CRON_SCHEDULE:-0 2 * * *}"
+    
+    log "Cron schedule: $cron_schedule"
+    
+    # Create cron job with environment variables passed to wrapper
+    cat > /tmp/crontab << EOF
+# Cron job with environment variables
+$cron_schedule DB_TYPE="$DB_TYPE" DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_NAME="$DB_NAME" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" RCLONE_REMOTE_PATH="$RCLONE_REMOTE_PATH" BACKUP_NAME_TEMPLATE="$BACKUP_NAME_TEMPLATE" BACKUP_NAME_PREFIX="$BACKUP_NAME_PREFIX" BACKUP_RETENTION_DAYS="$BACKUP_RETENTION_DAYS" TZ="$TZ" /app/backup.sh >> /app/logs/cron.log 2>&1
+EOF
+    
+    # Add cron job
+    crontab /tmp/crontab
+    rm /tmp/crontab
+    
+    # Create cron.log file
+    touch /app/logs/cron.log
+    
+    log "Cron job installed successfully"
+    
+    # Start cron service in background (Debian)
+    cron -f &
+    
+    # Keep container running and monitor cron.log
+    log "Cron service started. Monitoring logs..."
+    tail -f /app/logs/cron.log
+}
+
+# Main function
+main() {
+    log "Database Backup Tool - Starting..."
+    
+    # Check required environment variables
+    if [ -z "$DB_TYPE" ] || [ -z "$DB_HOST" ] || [ -z "$DB_NAME" ]; then
+        log "ERROR: Required database environment variables are not set"
+        log "Please set: DB_TYPE, DB_HOST, DB_NAME"
+        exit 1
+    fi
+    
+    if [ -z "$RCLONE_REMOTE_PATH" ]; then
+        log "ERROR: RCLONE_REMOTE_PATH is not set"
+        exit 1
+    fi
+    
+    # Log configuration
+    log "Database configuration: $DB_TYPE://$DB_USER@$DB_HOST:$DB_PORT/$DB_NAME"
+    
+    # Setup rclone once at startup
+    setup_rclone_once
+    
+    # Check if we should run in automated mode
+    if [ "$AUTOMATED_BACKUP" = "true" ] || [ "$AUTOMATED_BACKUP" = "1" ] || [ -n "$CRON_SCHEDULE" ]; then
+        log "Starting in AUTOMATED mode with cron"
+        setup_cron
+    else
+        log "Starting in MANUAL mode - single backup execution"
+        exec /app/backup.sh "$@"
+    fi
+}
+
+# Run main function
+main "$@"
