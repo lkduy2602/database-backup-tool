@@ -18,7 +18,7 @@ A lightweight, Docker-based database backup solution that automatically backs up
 ### 1. Clone Repository
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/lkduy2602/database-backup-tool.git
 cd database-backup
 ```
 
