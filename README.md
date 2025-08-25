@@ -79,6 +79,10 @@ AUTOMATED_BACKUP=true docker-compose up -d --build
 | `CRON_SCHEDULE`         | ❌       | Cron schedule           | `0 2 * * *` (daily 2 AM)                                    |
 | `BACKUP_RETENTION_DAYS` | ❌       | Days to keep backups    | `30`, `90`, `365`                                           |
 | `TZ`                    | ❌       | Timezone                | `Asia/Ho_Chi_Minh`, `UTC`                                   |
+| `RCLONE_TPS_LIMIT`      | ❌       | Rclone TPS limit        | `4`, `6`, `8` (default: `8`)                                |
+| `RCLONE_CHUNK_SIZE`     | ❌       | Chunk size for uploads  | `64M`, `128M`, `256M` (default: `128M`)                     |
+| `RCLONE_UPLOAD_CUTOFF`  | ❌       | Upload cutoff threshold | `64M`, `128M`, `256M` (default: `128M`)                     |
+| `RCLONE_TRANSFERS`      | ❌       | Concurrent transfers    | `1`, `2`, `4` (default: `1`)                                |
 
 ### Rclone Configuration Methods
 
@@ -128,6 +132,48 @@ volumes:
 
 # This way config persists between container restarts
 # and tokens are preserved
+```
+
+### Rate Limiting & Optimization
+
+The tool includes built-in rate limiting to avoid Google Drive API limits when uploading large database backups.
+
+#### Rate Limiting Variables
+
+| Variable               | Default | Description                   | Recommended Values                        |
+| ---------------------- | ------- | ----------------------------- | ----------------------------------------- |
+| `RCLONE_TPS_LIMIT`     | `8`     | Transactions per second limit | `4-6` (large files), `8-10` (small files) |
+| `RCLONE_CHUNK_SIZE`    | `128M`  | Chunk size for uploads        | `64M-256M`                                |
+| `RCLONE_UPLOAD_CUTOFF` | `128M`  | Upload cutoff threshold       | Same as `RCLONE_CHUNK_SIZE`               |
+| `RCLONE_TRANSFERS`     | `1`     | Concurrent transfers          | `1` (recommended for backups)             |
+
+#### Configuration Examples
+
+**For Large Databases (>500MB):**
+
+```bash
+RCLONE_TPS_LIMIT=4
+RCLONE_CHUNK_SIZE=64M
+RCLONE_UPLOAD_CUTOFF=64M
+RCLONE_TRANSFERS=1
+```
+
+**For Small Databases (<100MB):**
+
+```bash
+RCLONE_TPS_LIMIT=8
+RCLONE_CHUNK_SIZE=256M
+RCLONE_UPLOAD_CUTOFF=256M
+RCLONE_TRANSFERS=1
+```
+
+**For Very Large Databases (>1GB):**
+
+```bash
+RCLONE_TPS_LIMIT=4
+RCLONE_CHUNK_SIZE=64M
+RCLONE_UPLOAD_CUTOFF=64M
+RCLONE_TRANSFERS=1
 ```
 
 ### Backup Naming
@@ -232,7 +278,23 @@ docker-compose exec db-backup rclone lsd gdrive:
 docker-compose exec db-backup ls -la /root/.config/rclone/
 ```
 
-#### 2. Database Connection Failed
+#### 2. Google Drive Rate Limit Errors
+
+```bash
+# Check current rate limiting settings
+docker-compose exec db-backup env | grep RCLONE_
+
+# Reduce rate limiting for large files
+# Add to .env:
+RCLONE_TPS_LIMIT=4
+RCLONE_CHUNK_SIZE=64M
+RCLONE_UPLOAD_CUTOFF=64M
+
+# Monitor Google Drive API quota
+# Visit: https://console.cloud.google.com/apis/credentials
+```
+
+#### 3. Database Connection Failed
 
 ```bash
 # Check environment variables
@@ -242,7 +304,7 @@ docker-compose exec db-backup env | grep DB_
 docker-compose exec db-backup pg_isready -h $DB_HOST -p $DB_PORT
 ```
 
-#### 3. Cron Not Working
+#### 4. Cron Not Working
 
 ```bash
 # Check cron service
@@ -255,7 +317,7 @@ docker-compose exec db-backup tail -f /app/logs/cron.log
 docker-compose exec db-backup crontab -l
 ```
 
-#### 4. Backup Already Running
+#### 5. Backup Already Running
 
 ```bash
 # Check PID file
@@ -342,6 +404,17 @@ docker-compose exec db-backup top
 - Use appropriate backup frequency
 - Monitor upload speeds
 
+### 4. Rate Limiting for Large Files
+
+- **Large databases (>500MB)**: Use conservative settings
+  - `RCLONE_TPS_LIMIT=4-6`
+  - `RCLONE_CHUNK_SIZE=64M-128M`
+- **Small databases (<100MB)**: Can use more aggressive settings
+  - `RCLONE_TPS_LIMIT=8-10`
+  - `RCLONE_CHUNK_SIZE=128M-256M`
+- **Monitor Google Drive API quota** in Google Cloud Console
+- **Reduce settings** if you frequently hit rate limits
+
 ## 🔄 Backup Retention
 
 ### Automatic Cleanup
@@ -414,6 +487,11 @@ AUTOMATED_BACKUP=true
 CRON_SCHEDULE=0 2 * * *
 BACKUP_RETENTION_DAYS=90
 TZ=UTC
+# Rate limiting for large production database
+RCLONE_TPS_LIMIT=6
+RCLONE_CHUNK_SIZE=128M
+RCLONE_UPLOAD_CUTOFF=128M
+RCLONE_TRANSFERS=1
 
 # docker-compose.yml volumes (choose one):
 # Option A: Initial setup with file mount
@@ -439,6 +517,35 @@ RCLONE_CONFIG_BASE64=W2dkcml2ZV0K...
 RCLONE_REMOTE_PATH=gdrive:development/backups
 BACKUP_NAME_PREFIX=dev
 AUTOMATED_BACKUP=false
+# Conservative rate limiting for development
+RCLONE_TPS_LIMIT=8
+RCLONE_CHUNK_SIZE=64M
+RCLONE_UPLOAD_CUTOFF=64M
+RCLONE_TRANSFERS=1
+```
+
+### Example 3: Large Database with Conservative Settings
+
+```bash
+# .env configuration for very large databases (>1GB)
+DB_TYPE=postgres
+DB_HOST=large-db.example.com
+DB_PORT=5432
+DB_NAME=large_database
+DB_USER=backup_user
+DB_PASSWORD=secure_password
+RCLONE_CONFIG_FILE=/etc/rclone.conf
+RCLONE_REMOTE_PATH=gdrive:large_backups
+BACKUP_NAME_TEMPLATE=large_{db_name}_{date}_{time}.backup
+AUTOMATED_BACKUP=true
+CRON_SCHEDULE=0 1 * * *
+BACKUP_RETENTION_DAYS=30
+TZ=UTC
+# Very conservative rate limiting for large databases
+RCLONE_TPS_LIMIT=4
+RCLONE_CHUNK_SIZE=64M
+RCLONE_UPLOAD_CUTOFF=64M
+RCLONE_TRANSFERS=1
 ```
 
 ## 🤝 Contributing

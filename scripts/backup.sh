@@ -2,6 +2,16 @@
 
 set -e
 
+# Database Backup Tool with Rclone Rate Limiting
+# 
+# Environment Variables for Rclone Optimization:
+# - RCLONE_TPS_LIMIT: Transactions per second limit (default: 8)
+# - RCLONE_CHUNK_SIZE: Chunk size for large files (default: 128M)
+# - RCLONE_UPLOAD_CUTOFF: Upload cutoff for chunked uploads (default: 128M)
+# - RCLONE_TRANSFERS: Number of concurrent transfers (default: 1)
+#
+# These settings help avoid Google Drive API rate limits when uploading large database backups.
+
 # Log function
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
@@ -113,11 +123,52 @@ cleanup() {
 # Set trap for cleanup
 trap cleanup EXIT
 
+# Generate rclone options for rate limiting and optimization
+get_rclone_options() {
+    local options=""
+    
+    # Rate limiting to avoid Google Drive API limits
+    if [ -n "$RCLONE_TPS_LIMIT" ]; then
+        options="$options --tpslimit $RCLONE_TPS_LIMIT"
+    else
+        options="$options --tpslimit 8"  # Default safe limit
+    fi
+    
+    # Chunk size for large files (default 128M)
+    if [ -n "$RCLONE_CHUNK_SIZE" ]; then
+        options="$options --drive-chunk-size $RCLONE_CHUNK_SIZE"
+    else
+        options="$options --drive-chunk-size 128M"
+    fi
+    
+    # Upload cutoff for chunked uploads (default 128M)
+    if [ -n "$RCLONE_UPLOAD_CUTOFF" ]; then
+        options="$options --drive-upload-cutoff $RCLONE_UPLOAD_CUTOFF"
+    else
+        options="$options --drive-upload-cutoff 128M"
+    fi
+    
+    # Additional optimization options
+    if [ -n "$RCLONE_TRANSFERS" ]; then
+        options="$options --transfers $RCLONE_TRANSFERS"
+    else
+        options="$options --transfers 1"  # Single transfer for backup
+    fi
+    
+    # Progress reporting
+    options="$options --progress"
+    
+    echo "$options"
+}
+
 # Backup PostgreSQL
 backup_postgres() {
     log "Starting PostgreSQL backup for $DB_NAME on $DB_HOST:$DB_PORT..."
     
     local backup_name=$(generate_backup_name "postgres" "$DB_NAME")
+    local rclone_opts=$(get_rclone_options)
+    
+    log "Using rclone options: $rclone_opts"
     
     # Pipeline: pg_dump -> rclone copy (streaming)
     PGPASSWORD="$DB_PASSWORD" pg_dump \
@@ -132,7 +183,7 @@ backup_postgres() {
         --no-privileges \
         --format=custom \
         --compress=9 \
-        | rclone rcat "$RCLONE_REMOTE_PATH/$backup_name"
+        | rclone rcat $rclone_opts "$RCLONE_REMOTE_PATH/$backup_name"
     
     log "PostgreSQL backup completed: $backup_name"
 }
@@ -142,6 +193,9 @@ backup_mysql() {
     log "Starting MySQL backup for $DB_NAME on $DB_HOST:$DB_PORT..."
     
     local backup_name=$(generate_backup_name "mysql" "$DB_NAME")
+    local rclone_opts=$(get_rclone_options)
+    
+    log "Using rclone options: $rclone_opts"
     
     # Pipeline: mysqldump -> gzip -> rclone copy (streaming)
     mysqldump \
@@ -156,7 +210,7 @@ backup_mysql() {
         --opt \
         "$DB_NAME" \
         | gzip -9 \
-        | rclone rcat "$RCLONE_REMOTE_PATH/$backup_name"
+        | rclone rcat $rclone_opts "$RCLONE_REMOTE_PATH/$backup_name"
     
     log "MySQL backup completed: $backup_name"
 }
@@ -186,11 +240,14 @@ backup_sqlite() {
     log "Starting SQLite backup for $DB_NAME..."
     
     local backup_name=$(generate_backup_name "sqlite" "$DB_NAME")
+    local rclone_opts=$(get_rclone_options)
+    
+    log "Using rclone options: $rclone_opts"
     
     # Pipeline: sqlite3 dump -> gzip -> rclone copy (streaming)
     sqlite3 "$DB_NAME" .dump \
         | gzip -9 \
-        | rclone rcat "$RCLONE_REMOTE_PATH/$backup_name"
+        | rclone rcat $rclone_opts "$RCLONE_REMOTE_PATH/$backup_name"
     
     log "SQLite backup completed: $backup_name"
 }
@@ -227,7 +284,8 @@ main_backup() {
 cleanup_old_backups() {
     if [ -n "$BACKUP_RETENTION_DAYS" ]; then
         log "Cleaning up backups older than $BACKUP_RETENTION_DAYS days..."
-        rclone delete "$RCLONE_REMOTE_PATH" --min-age "${BACKUP_RETENTION_DAYS}d" --dry-run
+        local rclone_opts=$(get_rclone_options)
+        rclone delete $rclone_opts "$RCLONE_REMOTE_PATH" --min-age "${BACKUP_RETENTION_DAYS}d" --dry-run
     fi
 }
 
@@ -256,6 +314,9 @@ main() {
         log "  - Name prefix: ${BACKUP_NAME_PREFIX:-backup} (default)"
     fi
     log "  - Retention: ${BACKUP_RETENTION_DAYS:-unlimited} days"
+    log "  - Rclone TPS limit: ${RCLONE_TPS_LIMIT:-8} (default)"
+    log "  - Rclone chunk size: ${RCLONE_CHUNK_SIZE:-128M} (default)"
+    log "  - Rclone upload cutoff: ${RCLONE_UPLOAD_CUTOFF:-128M} (default)"
     
     # Perform backup
     main_backup
