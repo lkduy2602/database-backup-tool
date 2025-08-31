@@ -5,12 +5,13 @@ set -e
 # Database Backup Tool with Rclone Rate Limiting
 # 
 # Environment Variables for Rclone Optimization:
-# - RCLONE_TPS_LIMIT: Transactions per second limit (default: 8)
-# - RCLONE_CHUNK_SIZE: Chunk size for large files (default: 128M)
-# - RCLONE_UPLOAD_CUTOFF: Upload cutoff for chunked uploads (default: 128M)
+# - RCLONE_TPS_LIMIT: Transactions per second limit (default: 4)
+# - RCLONE_CHUNK_SIZE: Chunk size for large files (default: 64M)
+# - RCLONE_UPLOAD_CUTOFF: Upload cutoff for chunked uploads (default: 64M)
 # - RCLONE_TRANSFERS: Number of concurrent transfers (default: 1)
 #
 # These settings help avoid Google Drive API rate limits when uploading large database backups.
+# Default values are conservative to prevent rate limiting issues.
 
 # Log function
 log() {
@@ -131,21 +132,21 @@ get_rclone_options() {
     if [ -n "$RCLONE_TPS_LIMIT" ]; then
         options="$options --tpslimit $RCLONE_TPS_LIMIT"
     else
-        options="$options --tpslimit 8"  # Default safe limit
+        options="$options --tpslimit 4"  # More conservative default
     fi
     
-    # Chunk size for large files (default 128M)
+    # Chunk size for large files (default 64M - more conservative)
     if [ -n "$RCLONE_CHUNK_SIZE" ]; then
         options="$options --drive-chunk-size $RCLONE_CHUNK_SIZE"
     else
-        options="$options --drive-chunk-size 128M"
+        options="$options --drive-chunk-size 64M"
     fi
     
-    # Upload cutoff for chunked uploads (default 128M)
+    # Upload cutoff for chunked uploads (default 64M)
     if [ -n "$RCLONE_UPLOAD_CUTOFF" ]; then
         options="$options --drive-upload-cutoff $RCLONE_UPLOAD_CUTOFF"
     else
-        options="$options --drive-upload-cutoff 128M"
+        options="$options --drive-upload-cutoff 64M"
     fi
     
     # Additional optimization options
@@ -154,6 +155,10 @@ get_rclone_options() {
     else
         options="$options --transfers 1"  # Single transfer for backup
     fi
+    
+    # Retry logic for rate limits
+    options="$options --retries 3"
+    options="$options --retries-sleep 10s"
     
     # Progress reporting
     options="$options --progress"
@@ -183,7 +188,7 @@ backup_postgres() {
         --no-privileges \
         --format=custom \
         --compress=9 \
-        | rclone rcat $rclone_opts "$RCLONE_REMOTE_PATH/$backup_name"
+        | rclone rcat $x "$RCLONE_REMOTE_PATH/$backup_name"
     
     log "PostgreSQL backup completed: $backup_name"
 }
@@ -314,9 +319,9 @@ main() {
         log "  - Name prefix: ${BACKUP_NAME_PREFIX:-backup} (default)"
     fi
     log "  - Retention: ${BACKUP_RETENTION_DAYS:-unlimited} days"
-    log "  - Rclone TPS limit: ${RCLONE_TPS_LIMIT:-8} (default)"
-    log "  - Rclone chunk size: ${RCLONE_CHUNK_SIZE:-128M} (default)"
-    log "  - Rclone upload cutoff: ${RCLONE_UPLOAD_CUTOFF:-128M} (default)"
+    log "  - Rclone TPS limit: ${RCLONE_TPS_LIMIT:-4} (default)"
+    log "  - Rclone chunk size: ${RCLONE_CHUNK_SIZE:-64M} (default)"
+    log "  - Rclone upload cutoff: ${RCLONE_UPLOAD_CUTOFF:-64M} (default)"
     
     # Perform backup
     main_backup

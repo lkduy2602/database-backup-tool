@@ -62,7 +62,7 @@ setup_cron() {
     # Create cron job with environment variables passed to wrapper
     cat > /tmp/crontab << EOF
 # Cron job with environment variables
-$cron_schedule DB_TYPE="$DB_TYPE" DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_NAME="$DB_NAME" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" RCLONE_REMOTE_PATH="$RCLONE_REMOTE_PATH" BACKUP_NAME_TEMPLATE="$BACKUP_NAME_TEMPLATE" BACKUP_NAME_PREFIX="$BACKUP_NAME_PREFIX" BACKUP_RETENTION_DAYS="$BACKUP_RETENTION_DAYS" TZ="$TZ" /app/backup.sh >> /app/logs/cron.log 2>&1
+$cron_schedule DB_TYPE="$DB_TYPE" DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_NAME="$DB_NAME" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" RCLONE_REMOTE_PATH="$RCLONE_REMOTE_PATH" BACKUP_NAME_TEMPLATE="$BACKUP_NAME_TEMPLATE" BACKUP_NAME_PREFIX="$BACKUP_NAME_PREFIX" BACKUP_RETENTION_DAYS="$BACKUP_RETENTION_DAYS" TZ="$TZ" RCLONE_TPS_LIMIT="$RCLONE_TPS_LIMIT" RCLONE_CHUNK_SIZE="$RCLONE_CHUNK_SIZE" RCLONE_UPLOAD_CUTOFF="$RCLONE_UPLOAD_CUTOFF" RCLONE_TRANSFERS="$RCLONE_TRANSFERS" /app/backup.sh >> /app/logs/cron.log 2>&1
 EOF
     
     # Add cron job
@@ -100,6 +100,7 @@ main() {
     
     # Log configuration
     log "Database configuration: $DB_TYPE://$DB_USER@$DB_HOST:$DB_PORT/$DB_NAME"
+    log "Rclone rate limiting: TPS=${RCLONE_TPS_LIMIT:-4}, Chunk=${RCLONE_CHUNK_SIZE:-64M}, Cutoff=${RCLONE_UPLOAD_CUTOFF:-64M}, Transfers=${RCLONE_TRANSFERS:-1}"
     
     # Setup rclone once at startup
     setup_rclone_once
