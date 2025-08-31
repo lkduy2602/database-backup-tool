@@ -5,13 +5,16 @@ set -e
 # Database Backup Tool with Rclone Rate Limiting
 # 
 # Environment Variables for Rclone Optimization:
-# - RCLONE_TPS_LIMIT: Transactions per second limit (default: 4)
-# - RCLONE_CHUNK_SIZE: Chunk size for large files (default: 64M)
-# - RCLONE_UPLOAD_CUTOFF: Upload cutoff for chunked uploads (default: 64M)
+# - RCLONE_TPS_LIMIT: Transactions per second limit (default: 1)
+# - RCLONE_CHUNK_SIZE: Chunk size for large files (default: 16M)
+# - RCLONE_UPLOAD_CUTOFF: Upload cutoff for chunked uploads (default: 16M)
 # - RCLONE_TRANSFERS: Number of concurrent transfers (default: 1)
+# - RCLONE_CHECKERS: Number of checkers (default: 2)
+# - RCLONE_MAX_TRANSFER: Daily transfer limit (default: 700G)
 #
 # These settings help avoid Google Drive API rate limits when uploading large database backups.
-# Default values are conservative to prevent rate limiting issues.
+# Default values are ultra-conservative based on rclone forum recommendations.
+# Additional optimizations: drive-acknowledge-abuse, drive-keep-revision-forever, drive-skip-gdocs, drive-stop-on-upload-limit
 
 # Log function
 log() {
@@ -132,33 +135,54 @@ get_rclone_options() {
     if [ -n "$RCLONE_TPS_LIMIT" ]; then
         options="$options --tpslimit $RCLONE_TPS_LIMIT"
     else
-        options="$options --tpslimit 4"  # More conservative default
+        options="$options --tpslimit 1"  # Ultra-conservative default based on rclone forum
     fi
     
-    # Chunk size for large files (default 64M - more conservative)
+    # Chunk size for large files (default 16M - ultra-conservative)
     if [ -n "$RCLONE_CHUNK_SIZE" ]; then
         options="$options --drive-chunk-size $RCLONE_CHUNK_SIZE"
     else
-        options="$options --drive-chunk-size 64M"
+        options="$options --drive-chunk-size 16M"
     fi
     
-    # Upload cutoff for chunked uploads (default 64M)
+    # Upload cutoff for chunked uploads (default 16M)
     if [ -n "$RCLONE_UPLOAD_CUTOFF" ]; then
         options="$options --drive-upload-cutoff $RCLONE_UPLOAD_CUTOFF"
     else
-        options="$options --drive-upload-cutoff 64M"
+        options="$options --drive-upload-cutoff 16M"
     fi
     
-    # Additional optimization options
+    # Transfer and checker limits (based on rclone forum recommendations)
     if [ -n "$RCLONE_TRANSFERS" ]; then
         options="$options --transfers $RCLONE_TRANSFERS"
     else
         options="$options --transfers 1"  # Single transfer for backup
     fi
     
-    # Retry logic for rate limits
-    options="$options --retries 3"
-    options="$options --retries-sleep 10s"
+    # Checkers limit (very conservative)
+    if [ -n "$RCLONE_CHECKERS" ]; then
+        options="$options --checkers $RCLONE_CHECKERS"
+    else
+        options="$options --checkers 2"  # Very conservative based on forum
+    fi
+    
+    # Daily transfer limit to avoid quota issues (750GB per 24h limit)
+    if [ -n "$RCLONE_MAX_TRANSFER" ]; then
+        options="$options --max-transfer $RCLONE_MAX_TRANSFER"
+    else
+        options="$options --max-transfer 700G"  # Conservative daily limit
+    fi
+    
+    # Advanced rate limiting and optimization
+    options="$options --drive-acknowledge-abuse"
+    options="$options --drive-keep-revision-forever"
+    options="$options --drive-skip-gdocs"
+    options="$options --drive-stop-on-upload-limit"
+    
+    # Retry logic for rate limits with exponential backoff
+    options="$options --retries 5"
+    options="$options --retries-sleep 60s"  # Increased delay based on forum
+    options="$options --low-level-retries 3"
     
     # Progress reporting
     options="$options --progress"
@@ -319,9 +343,11 @@ main() {
         log "  - Name prefix: ${BACKUP_NAME_PREFIX:-backup} (default)"
     fi
     log "  - Retention: ${BACKUP_RETENTION_DAYS:-unlimited} days"
-    log "  - Rclone TPS limit: ${RCLONE_TPS_LIMIT:-4} (default)"
-    log "  - Rclone chunk size: ${RCLONE_CHUNK_SIZE:-64M} (default)"
-    log "  - Rclone upload cutoff: ${RCLONE_UPLOAD_CUTOFF:-64M} (default)"
+    log "  - Rclone TPS limit: ${RCLONE_TPS_LIMIT:-1} (default)"
+    log "  - Rclone chunk size: ${RCLONE_CHUNK_SIZE:-16M} (default)"
+    log "  - Rclone upload cutoff: ${RCLONE_UPLOAD_CUTOFF:-16M} (default)"
+    log "  - Rclone checkers: ${RCLONE_CHECKERS:-2} (default)"
+    log "  - Rclone max transfer: ${RCLONE_MAX_TRANSFER:-700G} (default)"
     
     # Perform backup
     main_backup
