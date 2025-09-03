@@ -42,15 +42,17 @@ check_running() {
 }
 
 # Check if rclone is ready
-check_rclone_ready() {
-    if [ ! -f /tmp/rclone_ready ]; then
-        log "ERROR: Rclone is not ready. Please ensure container started properly."
-        exit 1
-    fi
+check_rclone_ready() {  
+    log "Testing rclone connection..."
     
     # Quick test to ensure rclone still works
     if ! rclone lsd "$RCLONE_REMOTE_PATH" > /dev/null 2>&1; then
         log "ERROR: Rclone connection failed. Please check configuration."
+        log "This could be due to:"
+        log "  - Invalid rclone configuration"
+        log "  - Network connectivity issues"
+        log "  - Expired authentication tokens"
+        log "  - Incorrect RCLONE_REMOTE_PATH: $RCLONE_REMOTE_PATH"
         exit 1
     fi
     
@@ -212,7 +214,7 @@ backup_postgres() {
         --no-privileges \
         --format=custom \
         --compress=9 \
-        | rclone rcat $x "$RCLONE_REMOTE_PATH/$backup_name"
+        | rclone rcat $rclone_opts "$RCLONE_REMOTE_PATH/$backup_name"
     
     log "PostgreSQL backup completed: $backup_name"
 }
@@ -321,6 +323,13 @@ cleanup_old_backups() {
 # Main execution
 main() {
     log "Database Backup Tool - Starting backup..."
+    
+    # Debug information for cron jobs
+    log "Debug info:"
+    log "  - Current working directory: $(pwd)"
+    log "  - User: $(whoami)"
+    log "  - Process ID: $$"
+    log "  - Parent process: $(ps -o ppid= -p $$)"
     
     # Check if backup should run (prevent multiple instances)
     if ! check_running; then
