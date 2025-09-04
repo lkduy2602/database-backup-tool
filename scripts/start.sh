@@ -90,7 +90,7 @@ EOF
     # Create cron job with simple command
     cat > /tmp/crontab << EOF
 # Cron job with environment file
-$cron_schedule /app/cron-env.sh && /app/backup-wrapper.sh >> /app/logs/cron.log 2>&1
+$cron_schedule bash -c "source /app/cron-env.sh && /app/backup-wrapper.sh" >> /app/logs/cron.log 2>&1
 EOF
     
     # Add cron job
