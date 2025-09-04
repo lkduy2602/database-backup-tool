@@ -129,47 +129,53 @@ cleanup() {
 # Set trap for cleanup
 trap cleanup EXIT
 
+# Helper function to validate environment variable
+is_valid_env_var() {
+    local var_value="$1"
+    [ -n "$var_value" ] && [ "$var_value" != "" ] && [ "$var_value" != "null" ]
+}
+
 # Generate rclone options for rate limiting and optimization
 get_rclone_options() {
     local options=""
     
     # Rate limiting to avoid Google Drive API limits
-    if [ -n "$RCLONE_TPS_LIMIT" ]; then
+    if is_valid_env_var "$RCLONE_TPS_LIMIT"; then
         options="$options --tpslimit $RCLONE_TPS_LIMIT"
     else
         options="$options --tpslimit 1"  # Ultra-conservative default based on rclone forum
     fi
     
     # Chunk size for large files (default 16M - ultra-conservative)
-    if [ -n "$RCLONE_CHUNK_SIZE" ]; then
+    if is_valid_env_var "$RCLONE_CHUNK_SIZE"; then
         options="$options --drive-chunk-size $RCLONE_CHUNK_SIZE"
     else
         options="$options --drive-chunk-size 16M"
     fi
     
     # Upload cutoff for chunked uploads (default 16M)
-    if [ -n "$RCLONE_UPLOAD_CUTOFF" ]; then
+    if is_valid_env_var "$RCLONE_UPLOAD_CUTOFF"; then
         options="$options --drive-upload-cutoff $RCLONE_UPLOAD_CUTOFF"
     else
         options="$options --drive-upload-cutoff 16M"
     fi
     
     # Transfer and checker limits (based on rclone forum recommendations)
-    if [ -n "$RCLONE_TRANSFERS" ]; then
+    if is_valid_env_var "$RCLONE_TRANSFERS"; then
         options="$options --transfers $RCLONE_TRANSFERS"
     else
         options="$options --transfers 1"  # Single transfer for backup
     fi
     
     # Checkers limit (very conservative)
-    if [ -n "$RCLONE_CHECKERS" ]; then
+    if is_valid_env_var "$RCLONE_CHECKERS"; then
         options="$options --checkers $RCLONE_CHECKERS"
     else
         options="$options --checkers 2"  # Very conservative based on forum
     fi
     
     # Daily transfer limit to avoid quota issues (750GB per 24h limit)
-    if [ -n "$RCLONE_MAX_TRANSFER" ]; then
+    if is_valid_env_var "$RCLONE_MAX_TRANSFER"; then
         options="$options --max-transfer $RCLONE_MAX_TRANSFER"
     else
         options="$options --max-transfer 700G"  # Conservative daily limit

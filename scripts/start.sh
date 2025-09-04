@@ -76,21 +76,43 @@ export BACKUP_NAME_TEMPLATE="$BACKUP_NAME_TEMPLATE"
 export BACKUP_NAME_PREFIX="$BACKUP_NAME_PREFIX"
 export BACKUP_RETENTION_DAYS="$BACKUP_RETENTION_DAYS"
 export TZ="$TZ"
-export RCLONE_TPS_LIMIT="$RCLONE_TPS_LIMIT"
-export RCLONE_CHUNK_SIZE="$RCLONE_CHUNK_SIZE"
-export RCLONE_UPLOAD_CUTOFF="$RCLONE_UPLOAD_CUTOFF"
-export RCLONE_TRANSFERS="$RCLONE_TRANSFERS"
-export RCLONE_CHECKERS="$RCLONE_CHECKERS"
-export RCLONE_MAX_TRANSFER="$RCLONE_MAX_TRANSFER"
 EOF
+
+    # Only export RCLONE variables if they have valid values
+    if [ -n "$RCLONE_TPS_LIMIT" ] && [ "$RCLONE_TPS_LIMIT" != "" ]; then
+        echo "export RCLONE_TPS_LIMIT=\"$RCLONE_TPS_LIMIT\"" >> /app/cron-env.sh
+    fi
+    if [ -n "$RCLONE_CHUNK_SIZE" ] && [ "$RCLONE_CHUNK_SIZE" != "" ]; then
+        echo "export RCLONE_CHUNK_SIZE=\"$RCLONE_CHUNK_SIZE\"" >> /app/cron-env.sh
+    fi
+    if [ -n "$RCLONE_UPLOAD_CUTOFF" ] && [ "$RCLONE_UPLOAD_CUTOFF" != "" ]; then
+        echo "export RCLONE_UPLOAD_CUTOFF=\"$RCLONE_UPLOAD_CUTOFF\"" >> /app/cron-env.sh
+    fi
+    if [ -n "$RCLONE_TRANSFERS" ] && [ "$RCLONE_TRANSFERS" != "" ]; then
+        echo "export RCLONE_TRANSFERS=\"$RCLONE_TRANSFERS\"" >> /app/cron-env.sh
+    fi
+    if [ -n "$RCLONE_CHECKERS" ] && [ "$RCLONE_CHECKERS" != "" ]; then
+        echo "export RCLONE_CHECKERS=\"$RCLONE_CHECKERS\"" >> /app/cron-env.sh
+    fi
+    if [ -n "$RCLONE_MAX_TRANSFER" ] && [ "$RCLONE_MAX_TRANSFER" != "" ]; then
+        echo "export RCLONE_MAX_TRANSFER=\"$RCLONE_MAX_TRANSFER\"" >> /app/cron-env.sh
+    fi
     
     # Make environment file executable
     chmod +x /app/cron-env.sh
     
-    # Create cron job with simple command
+    # Create cron job with environment file and better error handling
     cat > /tmp/crontab << EOF
 # Cron job with environment file
+# Set PATH and other essential variables for cron
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+SHELL=/bin/bash
+
+# Main backup job
 $cron_schedule bash -c "source /app/cron-env.sh && /app/backup-wrapper.sh" >> /app/logs/cron.log 2>&1
+
+# Optional: Add a test job to verify environment (uncomment if needed)
+# 0 1 * * * bash -c "source /app/cron-env.sh && echo 'Cron test: Environment loaded successfully' >> /app/logs/cron.log"
 EOF
     
     # Add cron job
