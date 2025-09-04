@@ -59,10 +59,38 @@ setup_cron() {
     
     log "Cron schedule: $cron_schedule"
     
-    # Create cron job with environment variables passed to wrapper
+    # Create environment file for cron job
+    cat > /app/cron-env.sh << EOF
+#!/bin/bash
+# Environment variables for cron job
+export DB_TYPE="$DB_TYPE"
+export DB_HOST="$DB_HOST"
+export DB_PORT="$DB_PORT"
+export DB_NAME="$DB_NAME"
+export DB_USER="$DB_USER"
+export DB_PASSWORD="$DB_PASSWORD"
+export RCLONE_REMOTE_PATH="$RCLONE_REMOTE_PATH"
+export RCLONE_CONFIG_FILE="$RCLONE_CONFIG_FILE"
+export RCLONE_CONFIG_BASE64="$RCLONE_CONFIG_BASE64"
+export BACKUP_NAME_TEMPLATE="$BACKUP_NAME_TEMPLATE"
+export BACKUP_NAME_PREFIX="$BACKUP_NAME_PREFIX"
+export BACKUP_RETENTION_DAYS="$BACKUP_RETENTION_DAYS"
+export TZ="$TZ"
+export RCLONE_TPS_LIMIT="$RCLONE_TPS_LIMIT"
+export RCLONE_CHUNK_SIZE="$RCLONE_CHUNK_SIZE"
+export RCLONE_UPLOAD_CUTOFF="$RCLONE_UPLOAD_CUTOFF"
+export RCLONE_TRANSFERS="$RCLONE_TRANSFERS"
+export RCLONE_CHECKERS="$RCLONE_CHECKERS"
+export RCLONE_MAX_TRANSFER="$RCLONE_MAX_TRANSFER"
+EOF
+    
+    # Make environment file executable
+    chmod +x /app/cron-env.sh
+    
+    # Create cron job with simple command
     cat > /tmp/crontab << EOF
-# Cron job with environment variables
-$cron_schedule DB_TYPE="$DB_TYPE" DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_NAME="$DB_NAME" DB_USER="$DB_USER" DB_PASSWORD="$DB_PASSWORD" RCLONE_REMOTE_PATH="$RCLONE_REMOTE_PATH" RCLONE_CONFIG_FILE="$RCLONE_CONFIG_FILE" RCLONE_CONFIG_BASE64="$RCLONE_CONFIG_BASE64" BACKUP_NAME_TEMPLATE="$BACKUP_NAME_TEMPLATE" BACKUP_NAME_PREFIX="$BACKUP_NAME_PREFIX" BACKUP_RETENTION_DAYS="$BACKUP_RETENTION_DAYS" TZ="$TZ" RCLONE_TPS_LIMIT="$RCLONE_TPS_LIMIT" RCLONE_CHUNK_SIZE="$RCLONE_CHUNK_SIZE" RCLONE_UPLOAD_CUTOFF="$RCLONE_UPLOAD_CUTOFF" RCLONE_TRANSFERS="$RCLONE_TRANSFERS" RCLONE_CHECKERS="$RCLONE_CHECKERS" RCLONE_MAX_TRANSFER="$RCLONE_MAX_TRANSFER" /app/backup-wrapper.sh >> /app/logs/cron.log 2>&1
+# Cron job with environment file
+$cron_schedule /app/cron-env.sh && /app/backup-wrapper.sh >> /app/logs/cron.log 2>&1
 EOF
     
     # Add cron job
